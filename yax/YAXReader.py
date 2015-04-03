@@ -22,9 +22,6 @@ class Condition():
             # todo: cizellálni kell egy kicsit
             return self._return_default
 
-    DROP = 0
-    KEEP = 1
-    CALL = 2
 
     @staticmethod
     def normalize_condition(cnd, allow_parents=True, allow_children=True):
@@ -143,14 +140,11 @@ class Condition():
         self._inverted = not self._inverted
         return self
 
-    def check(self, element) -> int:
+    def check(self, element) -> bool:
         n = self._name(element.tag)
         a = self._attrs(element.attrib)
         t = self._text(element.text)
-        if n and a and t:
-            return Condition.CALL
-        else:
-            return Condition.DROP
+
 
         # todo EDDIG csak az adott tag-ra vonatkozó feltételeket vizsgálja.
         # CSAK lxml.ElementTree
@@ -159,6 +153,10 @@ class Condition():
         for child in list(element):
             self._children.check(child)
         # todo: kiértékelés
+
+    def keep(self, element) -> bool:
+        # todo
+        pass
 
 
 class CallbackRunner():
@@ -216,10 +214,11 @@ class YAXReader():
             raise AttributeError("The input stream is closed.")
 
         def process_element(e):
-            raise NotImplementedError("nincs kész")
             for cond, cb_runner in self._cnds:
-                cond.check(e)
-            # todo mikor törölhető? csak lezáráskor elemzünk!
+                if cond.check(e):
+                    cb_runner(e)
+                if not cond.keep(e):
+                    del e.getparent()[e.getparent().index(e)]
 
         parser = etree.XMLPullParser(events=('end',))
         chunk = self._stream.read(chunk_size)
