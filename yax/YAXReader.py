@@ -22,18 +22,40 @@ class Condition():
             # todo: cizellálni kell egy kicsit
             return self._return_default
 
+    DROP = 0
+    KEEP = 1
+    CALL = 2
+
     @staticmethod
-    def normalize_condition(cnd):
+    def normalize_condition(cnd, allow_parents=True, allow_children=True):
+        def check_child(c):
+            if isinstance(c, Condition) and not allow_children:
+                if not isinstance(c._children, Condition.EmptyCondition):
+                    raise AttributeError("Checking children of parents not allowed!")
+
+        def check_parent(c):
+            if isinstance(c, Condition) and not allow_parents:
+                if not isinstance(c._parent, Condition.EmptyCondition):
+                    raise AttributeError("Checking parents of child not allowed!")
+
         if isinstance(cnd, bool):
             return Condition.EmptyCondition(cnd)
         elif cnd is None:
             return Condition.EmptyCondition(True)
         elif isinstance(cnd, (Condition, Condition.EmptyCondition)):
+            check_child(cnd)
+            check_parent(cnd)
             return cnd
         elif isinstance(cnd, dict):
-            return Condition(cnd.get('name'), cnd.get('attrs'), cnd.get('children'), cnd.get('parent'), cnd.get('text'))
+            c = Condition(cnd.get('name'), cnd.get('attrs'), cnd.get('children'), cnd.get('parent'), cnd.get('text'))
+            check_child(c)
+            check_parent(c)
+            return c
         elif isinstance(cnd, (tuple, list)):
-            return Condition(cnd[0], cnd[1], cnd[2], cnd[3], cnd[4])
+            c = Condition(cnd[0], cnd[1], cnd[2], cnd[3], cnd[4])
+            check_child(c)
+            check_parent(c)
+            return c
         else:
             raise AttributeError("Unexpected attribute as condition! {}".format(type(cnd)))
 
@@ -102,8 +124,8 @@ class Condition():
         self._name = Condition.normalize_name(name)
         self._attrs = Condition.normalize_attrs(attrs)
         self._text = Condition.normalize_text(text)
-        self._children = Condition.normalize_condition(children)
-        self._parent = Condition.normalize_condition(parent)
+        self._children = Condition.normalize_condition(children, allow_parents=False)  # Nonsense check child's parent
+        self._parent = Condition.normalize_condition(parent, allow_children=False)     # Cannot check siblings! (memory)
 
     def and_(self, *cond):
         self._and = Condition.normalize_condition(*cond)
@@ -121,10 +143,15 @@ class Condition():
         self._inverted = not self._inverted
         return self
 
-    def check(self, element):
-        self._name(element.tag)
-        self._attrs(element.attrib)
-        self._text(element.text)
+    def check(self, element) -> int:
+        n = self._name(element.tag)
+        a = self._attrs(element.attrib)
+        t = self._text(element.text)
+        if n and a and t:
+            return Condition.CALL
+        else:
+            return Condition.DROP
+        # todo EDDIG csak az adott tag-ra vonatkozó feltételeket vizsgálja.
         # CSAK lxml.ElementTree
         if LXML:
             self._parent.check(element.getparent())
@@ -188,7 +215,7 @@ class YAXReader():
         raise NotImplementedError("TODO")
         pass  # todo
 
-    def find_as_etree(self, name=None, attrs={}, children=None, parent=None, text=None) -> CallbackRunner:
+    def find_as_element(self, name=None, attrs={}, children=None, parent=None, text=None) -> CallbackRunner:
         """
         Define a filter for parsing.
         If the pending subtree matches the filter, the parser calls the given callback with the found XML chunk as
@@ -248,7 +275,7 @@ class YAXReader():
         self._cnds.append(tup)
         return tup[1]
 
-    def match_as_etree(self, cond: Condition) -> CallbackRunner:
+    def match_as_element(self, cond: Condition) -> CallbackRunner:
         """
         Define a filter for parsing.
         If the pending subtree matches the condition, the parser calls the given callback with the found XML chunk as
