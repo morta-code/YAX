@@ -151,6 +151,7 @@ class Condition():
             return Condition.CALL
         else:
             return Condition.DROP
+
         # todo EDDIG csak az adott tag-ra vonatkozó feltételeket vizsgálja.
         # CSAK lxml.ElementTree
         if LXML:
@@ -203,17 +204,32 @@ class YAXReader():
     def __del__(self):
         del self.stream
 
-    def start(self):
+    def start(self, chunk_size=10000):
         """
         Start the parsing
+        :param chunk_size:
+        :return:
         """
         if not self._stream:
             raise AttributeError("Input stream is not initialized.")
         elif self._stream.closed:
             raise AttributeError("The input stream is closed.")
 
-        raise NotImplementedError("TODO")
-        pass  # todo
+        def process_element(e):
+            raise NotImplementedError("nincs kész")
+            for cond, cb_runner in self._cnds:
+                cond.check(e)
+            # todo mikor törölhető? csak lezáráskor elemzünk!
+
+        parser = etree.XMLPullParser(events=('end',))
+        chunk = self._stream.read(chunk_size)
+        while not chunk == "":
+            parser.feed(chunk)
+            for action, element in parser.read_events():
+                process_element(element)
+            chunk = self._stream.read(chunk_size)
+
+
 
     def find_as_element(self, name=None, attrs={}, children=None, parent=None, text=None) -> CallbackRunner:
         """
