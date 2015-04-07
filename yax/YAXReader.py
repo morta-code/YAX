@@ -9,6 +9,7 @@ except ImportError:
     LXML = False
 
 
+# todo: törölni
 def debug(*s):
     print(*s)
 
@@ -22,8 +23,7 @@ class Condition():
         def __init__(self, b: bool):
             self._return_default = b
 
-        def check(self):
-            # todo: cizellálni kell egy kicsit
+        def check(self, *p):
             return self._return_default
 
 
@@ -65,7 +65,7 @@ class Condition():
         if callable(name):
             return name
         elif isinstance(name, str):
-            return lambda s: s is name
+            return lambda s: s == name
         elif isinstance(name, type(re.compile(""))):
             return lambda s: name.fullmatch(s) is not None
         elif isinstance(name, (tuple, list)):
@@ -97,7 +97,7 @@ class Condition():
         if callable(text):
             return text
         elif isinstance(text, str):
-            return lambda s: s is text
+            return lambda s: s == text
         elif isinstance(text, type(re.compile(""))):
             return lambda s: text.fullmatch(s) is not None
         elif isinstance(text, (tuple, list)):
@@ -150,6 +150,12 @@ class Condition():
         return self
 
     def _check(self, element) -> bool:
+        if not self._and.check(element):
+            return False
+
+        if self._or.check(element):
+            return True
+
         if not self._name(element.tag):                         # If tagname doesn't match, element cannot match
             return False
         if not self._attrs(element.attrib):                     # If attrs dict doesn't match, element doesn't match
@@ -162,7 +168,11 @@ class Condition():
             if not self._parent.check(element.getparent()):     # The parents will be checked recursivelly.
                 return False
 
-        for child in list(element):
+        children = list(element)
+        if len(children) == 0:
+            return True
+
+        for child in children:
             if self._children.check(child):                     # The children will be checked iterativelly.
                 return True                                     # If any child matches, the condition matches.
 
@@ -172,7 +182,8 @@ class Condition():
         return not self._check(element)
 
     def keep(self, element) -> bool:
-        # todo
+        return self._children.check(element)
+        # todo: gyerekek gyerekei
         return True
 
 
@@ -191,15 +202,19 @@ class CallbackRunner():
 
     @staticmethod
     def _convert_to_dict(e):
-        # {tag: "", attrib: {}, text: "", children: []}
+        # {tag: "", attrib: {}, text: "", children: {}, childlist: []}
         d = {}
         d["tag"] = e.tag
         d["attrib"] = e.attrib
         d["text"] = e.text
-        ch = []
+        chd = {}
+        chl = []
         for child in list(e):
-            ch.append(CallbackRunner._convert_to_dict(child))
-        d["children"] = ch
+            cd = CallbackRunner._convert_to_dict(child)
+            chl.append(cd)
+            chd[cd["tag"]] = cd
+        d["children"] = chd
+        d["childlist"] = chl
         return d
 
 
@@ -266,7 +281,10 @@ class YAXReader():
                 if cond.check(e):
                     cb_runner(e)
                 if not cond.keep(e):
+                    print(e, "törölve")
                     del e.getparent()[e.getparent().index(e)]
+                else:
+                    print(e, "megtartva")
 
         parser = etree.XMLPullParser(events=('end',))
         chunk = self._stream.read(chunk_size)
