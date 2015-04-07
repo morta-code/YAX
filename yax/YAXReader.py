@@ -185,18 +185,47 @@ class CallbackRunner():
     def _default():
         pass
 
+    @staticmethod
+    def _convert_to_string(e):
+        return etree.tostring(e)
+
+    @staticmethod
+    def _convert_to_dict(e):
+        # {tag: "", attrib: {}, text: "", children: []}
+        d = {}
+        d["tag"] = e.tag
+        d["attrib"] = e.attrib
+        d["text"] = e.text
+        ch = []
+        for child in list(e):
+            ch.append(CallbackRunner._convert_to_dict(child))
+        d["children"] = ch
+        return d
+
+
+    @staticmethod
+    def _convert_to_element(e):
+        return e
+
     def __init__(self, t: int):
-        # todo: típuselágazás helyett function reference.
-        self._type = t
+        # todo: típus as property
         self._callback = CallbackRunner._default
+        self._type = t
+        if t == CallbackRunner.ETREE:
+            self._convert = CallbackRunner._convert_to_element
+        elif t == CallbackRunner.STRING:
+            self._convert = CallbackRunner._convert_to_string
+        elif t == CallbackRunner.DICT:
+            self._convert = CallbackRunner._convert_to_dict
+        else:
+            raise AttributeError("CallbackRunner type must be one of CallbackRunner.ETREE, CallbackRunner.STRING and "
+                                 "CallbackRunner.DICT!")
 
     def calls(self, callback):
         self._callback = callback
 
-    def __call__(self, *params):
-        # todo: milyen formátumú a params? (element, hol?)
-        # element, sourcelinenumber
-        self._callback(*params)
+    def __call__(self, element, line: int=0):
+        self._callback(self._convert(element), line)
 
 
 class YAXReader():
