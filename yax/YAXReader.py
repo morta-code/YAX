@@ -9,6 +9,10 @@ except ImportError:
     LXML = False
 
 
+def debug(*s):
+    print(*s)
+
+
 class Condition():
     """
     Condition class for filtering the XML parse events.
@@ -117,6 +121,7 @@ class Condition():
         self._and = Condition.normalize_condition(True)             # cond. must be match also
         self._or = Condition.normalize_condition(False)             # cond. if matches, self matches also
         self._inverted = False                                      # self doesn't matches if would be match
+        self.check = self._check                                    # set the non-inverted check function
         # condition attributes (check callables will be created):
         self._name = Condition.normalize_name(name)
         self._attrs = Condition.normalize_attrs(attrs)
@@ -138,25 +143,37 @@ class Condition():
         :return: The negated condition itself.
         """
         self._inverted = not self._inverted
+        if self._inverted:
+            self.check = self._inverted_check
+        else:
+            self.check = self._check
         return self
 
-    def check(self, element) -> bool:
-        n = self._name(element.tag)
-        a = self._attrs(element.attrib)
-        t = self._text(element.text)
+    def _check(self, element) -> bool:
+        if not self._name(element.tag):                         # If tagname doesn't match, element cannot match
+            return False
+        if not self._attrs(element.attrib):                     # If attrs dict doesn't match, element doesn't match
+            return False
+        if not self._text(element.text):                        # If text doesn't match, element doesn't match
+            return False
 
-
-        # todo EDDIG csak az adott tag-ra vonatkozó feltételeket vizsgálja.
-        # CSAK lxml.ElementTree
+        # CSAK lxml.ElementTree todo: WORKAROUND
         if LXML:
-            self._parent.check(element.getparent())
+            if not self._parent.check(element.getparent()):     # The parents will be checked recursivelly.
+                return False
+
         for child in list(element):
-            self._children.check(child)
-        # todo: kiértékelés
+            if self._children.check(child):                     # The children will be checked iterativelly.
+                return True                                     # If any child matches, the condition matches.
+
+        return False  # This can be occured only if every condition matched exept children.
+
+    def _inverted_check(self, element) -> bool:
+        return not self._check(element)
 
     def keep(self, element) -> bool:
         # todo
-        pass
+        return True
 
 
 class CallbackRunner():
@@ -169,6 +186,7 @@ class CallbackRunner():
         pass
 
     def __init__(self, t: int):
+        # todo: típuselágazás helyett function reference.
         self._type = t
         self._callback = CallbackRunner._default
 
@@ -176,7 +194,8 @@ class CallbackRunner():
         self._callback = callback
 
     def __call__(self, *params):
-        # todo: milyen formátumú a params? (chunk, hol?)
+        # todo: milyen formátumú a params? (element, hol?)
+        # element, sourcelinenumber
         self._callback(*params)
 
 
@@ -227,8 +246,6 @@ class YAXReader():
             for action, element in parser.read_events():
                 process_element(element)
             chunk = self._stream.read(chunk_size)
-
-
 
     def find_as_element(self, name=None, attrs={}, children=None, parent=None, text=None) -> CallbackRunner:
         """
