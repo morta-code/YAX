@@ -1,15 +1,19 @@
+__author__ = 'Móréh, Tamás'
+
 import io
 import re
 
+RE = type(re.compile(""))
 try:
     import lxml.etree as etree
+
     LXML = True
 except ImportError:
     import xml.etree.ElementTree as etree
+
     LXML = False
 
 
-# todo: törölni
 def debug(*s):
     print(*s)
 
@@ -19,6 +23,7 @@ class Condition():
     Condition class for filtering the XML parse events.
     If the condition satisfies the callback function will be called.
     """
+
     class EmptyCondition():
         def __init__(self, b: bool):
             self._return_default = b
@@ -28,10 +33,11 @@ class Condition():
 
 
     @staticmethod
-    def normalize_condition(cnd, allow_parents=True, allow_children=True):
+    def normalize_condition(cnd, allow_parents=True, allow_children=True, none_answer=True,
+                            allow_none=True):
         def check_child(c):
             if isinstance(c, Condition) and not allow_children:
-                if not isinstance(c._children, Condition.EmptyCondition):
+                if len(c._children) != 0:
                     raise AttributeError("Checking children of parents not allowed!")
 
         def check_parent(c):
@@ -39,21 +45,26 @@ class Condition():
                 if not isinstance(c._parent, Condition.EmptyCondition):
                     raise AttributeError("Checking parents of child not allowed!")
 
-        if isinstance(cnd, bool):
+        if isinstance(cnd, (str, RE)):
+            return Condition(cnd)
+        elif isinstance(cnd, bool):
             return Condition.EmptyCondition(cnd)
-        elif cnd is None:
-            return Condition.EmptyCondition(True)
+        elif cnd is None and allow_none:
+            return Condition.EmptyCondition(none_answer)
         elif isinstance(cnd, (Condition, Condition.EmptyCondition)):
             check_child(cnd)
             check_parent(cnd)
             return cnd
         elif isinstance(cnd, dict):
-            c = Condition(cnd.get('name'), cnd.get('attrs'), cnd.get('children'), cnd.get('parent'), cnd.get('text'))
+            c = Condition(cnd.get('tag'), cnd.get('attrib'), cnd.get('text'),
+                          cnd.get('parent'), cnd.get('children'), cnd.get("keep_children"))
             check_child(c)
             check_parent(c)
             return c
-        elif isinstance(cnd, (tuple, list)):
-            c = Condition(cnd[0], cnd[1], cnd[2], cnd[3], cnd[4])
+        elif isinstance(cnd, tuple):
+            if len(cnd) == 0:
+                return Condition.EmptyCondition(none_answer)
+            c = Condition(*cnd)
             check_child(c)
             check_parent(c)
             return c
@@ -61,36 +72,61 @@ class Condition():
             raise AttributeError("Unexpected attribute as condition! {}".format(type(cnd)))
 
     @staticmethod
-    def normalize_name(name):
-        if callable(name):
-            return name
-        elif isinstance(name, str):
-            return lambda s: s == name
-        elif isinstance(name, type(re.compile(""))):
-            return lambda s: name.fullmatch(s) is not None
-        elif isinstance(name, (tuple, list)):
-            return lambda s: s in name
-        elif not name:
-            return lambda s: True
+    def normalize_children(cnd) -> list:
+        if cnd is None:
+            return []
+        if isinstance(cnd, list):
+            newcnd = list()
+            for c in cnd:
+                # itt nem lehet EmptyCondition
+                newcnd.append(
+                    Condition.normalize_condition(c, allow_parents=False, allow_none=False))
+            return newcnd
         else:
-            raise AttributeError("Unexpected attribute as tag name filter! {}".format(type(name)))
+            # itt nem lehet EmptyCondition
+            return [Condition.normalize_condition(cnd, allow_parents=False, allow_none=False), ]
 
     @staticmethod
-    def normalize_attrs(attrs):
-        if not attrs:
-            return lambda d: True
-        elif isinstance(attrs, dict):
-            for k, v in attrs.items():
-                attrs[k] = Condition.normalize_name(v)
+    def normalize_tag(tag):
+        """
+        Condition tag field to lambda expression
+        :param tag:
+        :return: a bool lambda value
+        """
+        if callable(tag):  # A (hopefully) bool expression
+            return tag
+        elif isinstance(tag, str):  # The lam.expr. will compare
+            return lambda s: s == tag
+        elif isinstance(tag, RE):  # The l.exp. checks with fullmatch
+            return lambda s: tag.fullmatch(s) is not None
+        elif isinstance(tag, list):  # The l.ex. checks the containing (str!)
+            return lambda s: s in tag
+        elif tag is True:  # Ha csak létezést vizsgálunk, akkor igaz. todo:
+            return lambda s: True
+        elif not tag:  # If none, every tagname will be accepted.
+            return lambda s: True
+        else:
+            raise AttributeError("Unexpected attribute as tag name filter! {}".format(type(tag)))
 
-            def checkarttr(d: dict):    # todo: azért ezt nem árt kipróbálni
-                for k, v in d.items():
-                    current = attrs.get(k)
-                    if current and not current(v):
+    @staticmethod
+    def normalize_attrib(attrib):
+        if not attrib:
+            return lambda d: True
+        elif isinstance(attrib, dict):
+            for k, v in attrib.items():
+                attrib[k] = Condition.normalize_tag(v)
+
+            def checkarttr(d: dict):
+                # Ha van olyan feltétel, amire nincs attr, vagy amire nem stimmel, álljon le.
+                for curr_k, curr_v in d.items():
+                    check = attrib.get(curr_k)
+                    if not check or not check(curr_v):
                         return False
                 return True
 
             return checkarttr
+        else:
+            raise AttributeError("Unexpected attribute as attrib filter! {}".format(type(attrib)))
 
     @staticmethod
     def normalize_text(text):
@@ -98,7 +134,7 @@ class Condition():
             return text
         elif isinstance(text, str):
             return lambda s: s == text
-        elif isinstance(text, type(re.compile(""))):
+        elif isinstance(text, RE):
             return lambda s: text.fullmatch(s) is not None
         elif isinstance(text, (tuple, list)):
             return lambda s: s in text
@@ -107,35 +143,18 @@ class Condition():
         else:
             raise AttributeError("Unexpected attribute as text filter! {}".format(type(text)))
 
-    def __init__(self, name=None, attrs=None, children=None, parent=None, text=None):
-        """
-        Condition class for filtering the XML parse events.
-        If the condition satisfies the callback function will be called.
-        :param name: Tag name. Can be str, regexp, bool callalble or a tuple of them.
-        :param attrs: Attributes dict. The keys are names of attributes, values can be str, regexp, bool callalble
-        and tuple of them.
-        :param children: Optional filter for constrain child node(s). It is a Condition or a dict/tuple of arguments.
-        :param parent: Optional filter for constrain parent node(s). It is a Condition or a dict/tuple of arguments.
-        :param text: Text of the node. Can be str, regexp, bool callalble or a tuple of them.
-        """
-        self._and = Condition.normalize_condition(True)             # cond. must be match also
-        self._or = Condition.normalize_condition(False)             # cond. if matches, self matches also
-        self._inverted = False                                      # self doesn't matches if would be match
-        self.check = self._check                                    # set the non-inverted check function
+    def __init__(self, tag=None, attrib=None, text=None,
+                 parent=None, children=None, keep_children=None):
+
+        self._inverted = False  # self doesn't matches if would be match
+        self.check = self._check  # set the non-inverted check function
         # condition attributes (check callables will be created):
-        self._name = Condition.normalize_name(name)
-        self._attrs = Condition.normalize_attrs(attrs)
+        self._tag = Condition.normalize_tag(tag)
+        self._attrib = Condition.normalize_attrib(attrib)
         self._text = Condition.normalize_text(text)
-        self._children = Condition.normalize_condition(children, allow_parents=False)  # Nonsense check child's parent
-        self._parent = Condition.normalize_condition(parent, allow_children=False)     # Cannot check siblings! (memory)
-
-    def and_(self, *cond):
-        self._and = Condition.normalize_condition(*cond)
-        return self._and
-
-    def or_(self, *cond):
-        self._or = Condition.normalize_condition(*cond)
-        return self._or
+        self._parent = Condition.normalize_condition(parent, allow_children=False)
+        self._children = Condition.normalize_children(children)
+        self._keep = Condition.normalize_children(keep_children)
 
     def inverse_(self):
         """
@@ -149,48 +168,58 @@ class Condition():
             self.check = self._check
         return self
 
+    def _check_children(self, element):
+        children = list(element)  # Every child-condition must be matching to a
+        for ch_cond in self._children:  # child
+            found = False
+            for child in children:
+                if ch_cond.check(child):
+                    found = True
+                    break
+            if not found:
+                return False
+        return True
+
     def _check(self, element) -> bool:
-        if not self._and.check(element):
+        if not self._tag(element.tag):  # If tagname doesn't match, element cannot match
             return False
-
-        if self._or.check(element):
-            return True
-
-        if not self._name(element.tag):                         # If tagname doesn't match, element cannot match
+        if not self._attrib(element.attrib):  # If attrib doesn't match, element doesn't match
             return False
-        if not self._attrs(element.attrib):                     # If attrs dict doesn't match, element doesn't match
-            return False
-        if not self._text(element.text):                        # If text doesn't match, element doesn't match
+        if not self._text(element.text):  # If text doesn't match, element doesn't match
             return False
 
         # CSAK lxml.ElementTree todo: WORKAROUND
         if LXML:
-            if not self._parent.check(element.getparent()):     # The parents will be checked recursivelly.
+            if not self._parent.check(element.getparent()):  # The parents checked recursivelly.
                 return False
 
-        children = list(element)
-        if len(children) == 0:
-            return True
+        if not self._check_children(element):
+            return False
 
-        for child in children:
-            if self._children.check(child):                     # The children will be checked iterativelly.
-                return True                                     # If any child matches, the condition matches.
-
-        return False  # This can be occured only if every condition matched exept children.
+        return True
 
     def _inverted_check(self, element) -> bool:
         return not self._check(element)
 
     def keep(self, element) -> bool:
-        return self._children.check(element)
-        # todo: gyerekek gyerekei
-        return True
+        parent = element.getparent()
+        if not parent or not self._tag(parent.tag):
+            return False
+        for ch_cond in self._children:
+            if ch_cond.check(element):
+                return True
+        for keep_cond in self._keep:
+            if keep_cond.check(element):
+                return True
+        return False
 
 
 class CallbackRunner():
     ETREE = 1
     STRING = 2
     DICT = 3
+    JSON_DICT = 4
+    ATTRIB_PREFIX = "-"
 
     @staticmethod
     def _default():
@@ -201,20 +230,46 @@ class CallbackRunner():
         return etree.tostring(e)
 
     @staticmethod
-    def _convert_to_dict(e):
+    def _convert_to_cmplx_dict(e):
         # {tag: "", attrib: {}, text: "", children: {}, childlist: []}
-        d = {}
+        d = dict()
         d["tag"] = e.tag
         d["attrib"] = e.attrib
         d["text"] = e.text
         chd = {}
         chl = []
         for child in list(e):
-            cd = CallbackRunner._convert_to_dict(child)
+            cd = CallbackRunner._convert_to_cmplx_dict(child)
             chl.append(cd)
             chd[cd["tag"]] = cd
         d["children"] = chd
         d["childlist"] = chl
+        return d
+
+    @staticmethod
+    def _convert_to_json_dict(e):
+        # Catalog: {-name: "first", PLANT: [{name: "Rózsa", }, {name: "Liliom",}]}
+        # todo: ez nagyon szar, vagy? NINCS TESZTELVE
+        d = {}
+        for a, v in e.attrib.items():
+            if d.get(CallbackRunner.ATTRIB_PREFIX + a):
+                c = d[CallbackRunner.ATTRIB_PREFIX + a]
+                if isinstance(c, list):
+                    c.append(v)
+                else:
+                    d[CallbackRunner.ATTRIB_PREFIX + a] = [c, v]
+            else:
+                d[CallbackRunner.ATTRIB_PREFIX + a] = v
+        for child in list(e):
+            ch = CallbackRunner._convert_to_json_dict(child)
+            if d.get(child.tag):
+                c = d[child.tag]
+                if isinstance(c, list):
+                    c.append(ch)
+                else:
+                    d[child.tag] = [c, ch]
+            else:
+                d[child.tag] = ch
         return d
 
 
@@ -222,18 +277,21 @@ class CallbackRunner():
     def _convert_to_element(e):
         return e
 
-    def __init__(self, t: int):
-        # todo: típus as property
+    def __init__(self, t: int, attrib_prefix='-'):
         self._callback = CallbackRunner._default
         self._type = t
+        CallbackRunner.ATTRIB_PREFIX = attrib_prefix
         if t == CallbackRunner.ETREE:
             self._convert = CallbackRunner._convert_to_element
         elif t == CallbackRunner.STRING:
             self._convert = CallbackRunner._convert_to_string
         elif t == CallbackRunner.DICT:
-            self._convert = CallbackRunner._convert_to_dict
+            self._convert = CallbackRunner._convert_to_cmplx_dict
+        elif t == CallbackRunner.JSON_DICT:
+            self._convert = CallbackRunner._convert_to_json_dict
         else:
-            raise AttributeError("CallbackRunner type must be one of CallbackRunner.ETREE, CallbackRunner.STRING and "
+            raise AttributeError("CallbackRunner type must be one of CallbackRunner.ETREE, " +
+                                 "CallbackRunner.STRING, CallbackRunner.JSON_DICT and " +
                                  "CallbackRunner.DICT!")
 
     def calls(self, callback):
@@ -244,7 +302,7 @@ class CallbackRunner():
 
 
 class YAXReader():
-    def __init__(self, stream: io.TextIOBase = None):
+    def __init__(self, stream: io.TextIOBase=None):
         self._cnds = []
         self._stream = stream
 
@@ -266,25 +324,22 @@ class YAXReader():
         del self.stream
 
     def start(self, chunk_size=10000):
-        """
-        Start the parsing
-        :param chunk_size:
-        :return:
-        """
         if not self._stream:
             raise AttributeError("Input stream is not initialized.")
         elif self._stream.closed:
             raise AttributeError("The input stream is closed.")
 
         def process_element(e):
+            keep = False
             for cond, cb_runner in self._cnds:
                 if cond.check(e):
                     cb_runner(e)
-                if not cond.keep(e):
-                    print(e, "törölve")
-                    del e.getparent()[e.getparent().index(e)]
-                else:
-                    print(e, "megtartva")
+                if keep:
+                    continue
+                if cond.keep(e):
+                    keep = True
+            if not keep:
+                del e.getparent()[e.getparent().index(e)]
 
         parser = etree.XMLPullParser(events=('end',))
         chunk = self._stream.read(chunk_size)
@@ -294,104 +349,50 @@ class YAXReader():
                 process_element(element)
             chunk = self._stream.read(chunk_size)
 
-    def find_as_element(self, name=None, attrs={}, children=None, parent=None, text=None) -> CallbackRunner:
-        """
-        Define a filter for parsing.
-        If the pending subtree matches the filter, the parser calls the given callback with the found XML chunk as
-        an ElementTree.
-        :param name: Tag name. Can be str, regexp, bool callalble or a tuple of them.
-        :param attrs: Attributes dict. The keys are names of attributes, values can be str, regexp, bool callalble
-        and tuple of them.
-        :param children: Optional filter for constrain child node(s). It is a Condition or a dict/tuple of arguments.
-        :param parent: Optional filter for constrain parent node(s). It is a Condition or a dict/tuple of arguments.
-        :param text: Text of the node. Can be str, regexp, bool callalble or a tuple of them.
-        :return: CallbackRunner object to connect with a callable.
-
-        >>> reader.find_as_etree("BOTANICAL", parent={'children': Condition('PRICE', text=lambda x: float(x[1:]) < 5)}
-        ).calls(lambda d: print(d.text))
-        """
-        tup = (Condition(name, attrs, children, parent, text), CallbackRunner(CallbackRunner.ETREE));
+    def find_as_element(self, tag=None, attrib={}, text=None,
+                        parent=None, children=None, keep_children=None) -> CallbackRunner:
+        tup = (Condition(tag, attrib, text, parent, children, keep_children),
+               CallbackRunner(CallbackRunner.ETREE))
         self._cnds.append(tup)
         return tup[1]
 
-    def find_as_str(self, name=None, attrs={}, children=None, parent=None, text=None) -> CallbackRunner:
-        """
-        Define a filter for parsing.
-        If the pending subtree matches the filter, the parser calls the given callback with the found XML chunk as
-        an str.
-        :param name: Tag name. Can be str, regexp, bool callalble or a tuple of them.
-        :param attrs: Attributes dict. The keys are names of attributes, values can be str, regexp, bool callalble
-        and tuple of them.
-        :param children: Optional filter for constrain child node(s). It is a Condition or a dict/tuple of arguments.
-        :param parent: Optional filter for constrain parent node(s). It is a Condition or a dict/tuple of arguments.
-        :param text: Text of the node. Can be str, regexp, bool callalble or a tuple of them.
-        :return: CallbackRunner object to connect with a callable.
-
-        >>> reader.find_as_str("BOTANICAL", parent={'children': Condition('PRICE', text=lambda x: float(x[1:]) < 5)}
-        ).calls(lambda s: print(s))
-        """
-        tup = (Condition(name, attrs, children, parent, text), CallbackRunner(CallbackRunner.STRING));
+    def find_as_str(self, tag=None, attrib={}, text=None,
+                    parent=None, children=None, keep_children=None) -> CallbackRunner:
+        tup = (Condition(tag, attrib, text, parent, children, keep_children),
+               CallbackRunner(CallbackRunner.STRING))
         self._cnds.append(tup)
         return tup[1]
 
-    def find_as_dict(self, name=None, attrs={}, children=None, parent=None, text=None) -> CallbackRunner:
-        """
-        Define a filter for parsing.
-        If the pending subtree matches the filter, the parser calls the given callback with the found XML chunk as
-        a dict.
-        :param name: Tag name. Can be str, regexp, bool callalble or a tuple of them.
-        :param attrs: Attributes dict. The keys are names of attributes, values can be str, regexp, bool callalble
-        and tuple of them.
-        :param children: Optional filter for constrain child node(s). It is a Condition or a dict/tuple of arguments.
-        :param parent: Optional filter for constrain parent node(s). It is a Condition or a dict/tuple of arguments.
-        :param text: Text of the node. Can be str, regexp, bool callalble or a tuple of them.
-        :return: CallbackRunner object to connect with a callable.
+    def find_as_dict(self, tag=None, attrib={}, text=None,
+                     parent=None, children=None, keep_children=None) -> CallbackRunner:
+        tup = (Condition(tag, attrib, text, parent, children, keep_children),
+               CallbackRunner(CallbackRunner.DICT))
+        self._cnds.append(tup)
+        return tup[1]
 
-        >>> reader.find_as_dict("BOTANICAL", parent={'children': Condition('PRICE', text=lambda x: float(x[1:]) < 5)}
-        ).calls(lambda d: print(d['text']))
-        """
-        tup = (Condition(name, attrs, children, parent, text), CallbackRunner(CallbackRunner.DICT));
+    def find_as_json_dict(self, tag=None, attrib={}, text=None,
+                          parent=None, children=None, keep_children=None) -> CallbackRunner:
+        tup = (Condition(tag, attrib, text, parent, children, keep_children),
+               CallbackRunner(CallbackRunner.JSON_DICT))
         self._cnds.append(tup)
         return tup[1]
 
     def match_as_element(self, cond: Condition) -> CallbackRunner:
-        """
-        Define a filter for parsing.
-        If the pending subtree matches the condition, the parser calls the given callback with the found XML chunk as
-        an ElementTree.
-        :param cond: Condition
-        :return: CallbackRunner object to connect with a callable.
-
-        >>> reader.match_as_etree(condition).calls(lambda d: print(d.text))
-        """
-        tup = (cond, CallbackRunner(CallbackRunner.ETREE));
+        tup = (cond, CallbackRunner(CallbackRunner.ETREE))
         self._cnds.append(tup)
         return tup[1]
 
     def match_as_str(self, cond: Condition) -> CallbackRunner:
-        """
-        Define a filter for parsing.
-        If the pending subtree matches the condition, the parser calls the given callback with the found XML chunk as
-        an str.
-        :param cond: Condition
-        :return: CallbackRunner object to connect with a callable.
-
-        >>> reader.match_as_str(condition).calls(lambda d: print(d))
-        """
-        tup = (cond, CallbackRunner(CallbackRunner.STRING));
+        tup = (cond, CallbackRunner(CallbackRunner.STRING))
         self._cnds.append(tup)
         return tup[1]
 
     def match_as_dict(self, cond: Condition) -> CallbackRunner:
-        """
-        Define a filter for parsing.
-        If the pending subtree matches the condition, the parser calls the given callback with the found XML chunk as
-        a dict.
-        :param cond: Condition
-        :return: CallbackRunner object to connect with a callable.
+        tup = (cond, CallbackRunner(CallbackRunner.DICT))
+        self._cnds.append(tup)
+        return tup[1]
 
-        >>> reader.match_as_dict(condition).calls(lambda d: print(d['text']))
-        """
-        tup = (cond, CallbackRunner(CallbackRunner.DICT));
+    def match_as_json_dict(self, cond: Condition) -> CallbackRunner:
+        tup = (cond, CallbackRunner(CallbackRunner.JSON_DICT))
         self._cnds.append(tup)
         return tup[1]
