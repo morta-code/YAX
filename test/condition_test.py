@@ -6,7 +6,7 @@ from yax.YAXReader import Condition
 import re
 
 
-class MyTestCase(unittest.TestCase):
+class ConditionTest(unittest.TestCase):
 
     def setUp(self):
         self.e_plant_hepatica = etree.fromstring("<PLANT><COMMON>Hepatica</COMMON><BOTANICAL>" +
@@ -20,38 +20,69 @@ class MyTestCase(unittest.TestCase):
                                                   "Shady</LIGHT><PRICE>$9.37</PRICE>" +
                                                   "<AVAILABILITY>030699</AVAILABILITY></PLANT>")
 
+        self.e_lineup = etree.fromstring('<lineup event_participantsFK="2278405" participantFK=' +
+                                         '"100612" lineup_typeFK="5" shirt_number="0" pos="0" ' +
+                                         'enet_pos="0" del="no" n="0" ut="2011-03-14 23:46:57" ' +
+                                         'id="2743035"><participant name="Mike Brown" gender=' +
+                                         '"undefined" type="athlete" countryFK="652" enetID=' +
+                                         '"3082" enetSportID="ih" del="no" n="0" ut="2010-10-05 ' +
+                                         '15:26:58" id="100612"></participant></lineup>')
+
     def tearDown(self):
         pass
 
     def test_only_tag_condition(self):
         c = Condition("PLANT")
-        self.assertTrue(c.check(self.e_plant_hepatica), "A c Condition nem teljesül")
-        self.assertTrue(c.check(etree.fromstring("<PLANT/>")), "A c Condition nem teljesül")
-        self.assertFalse(c.check(etree.fromstring("<plant/>")), "A c Condition nem hamis")
-        self.assertFalse(c.check(self.e_plant_columbine[1]), "A c Condition nem hamis")
+        self.assertTrue(c.check(self.e_plant_hepatica))
+        self.assertTrue(c.check(etree.fromstring("<PLANT/>")))
+        self.assertFalse(c.check(etree.fromstring("<plant/>")))
+        self.assertFalse(c.check(self.e_plant_columbine[1]))
 
-        d = Condition(re.compile("plant", re.I))
-        self.assertTrue(d.check(self.e_plant_hepatica), "A d Condition nem teljesül")
-        self.assertTrue(d.check(etree.fromstring("<plant/>")), "A d Condition nem teljesül")
-        self.assertTrue(d.check(etree.fromstring("<PlAnT/>")), "A d Condition nem teljesül")
-        self.assertFalse(d.check(self.e_plant_columbine[1]), "A d Condition nem hamis")
-        self.assertFalse(d.check(etree.fromstring("<plant2/>")), "A d Condition nem hamis")
+        c = Condition(re.compile("plant", re.I))
+        self.assertTrue(c.check(self.e_plant_hepatica))
+        self.assertTrue(c.check(etree.fromstring("<plant/>")))
+        self.assertTrue(c.check(etree.fromstring("<PlAnT/>")))
+        self.assertFalse(c.check(self.e_plant_columbine[1]))
+        self.assertFalse(c.check(etree.fromstring("<plant2/>")))
 
-        e = Condition(lambda s: s == "PLANT")
-        self.assertTrue(e.check(self.e_plant_hepatica), "Az e Condition nem teljesül")
-        self.assertTrue(e.check(etree.fromstring("<PLANT/>")), "Az e Condition nem teljesül")
-        self.assertFalse(e.check(self.e_plant_columbine[1]), "Az e Condition nem hamis")
-        self.assertFalse(e.check(etree.fromstring("<plant2/>")), "Az e Condition nem hamis")
+        c = Condition(lambda s: s == "PLANT")
+        self.assertTrue(c.check(self.e_plant_hepatica))
+        self.assertTrue(c.check(etree.fromstring("<PLANT/>")))
+        self.assertFalse(c.check(self.e_plant_columbine[1]))
+        self.assertFalse(c.check(etree.fromstring("<plant2/>")))
 
-        f = Condition(["PLANT", "plant", "Plant"])
-        self.assertTrue(f.check(self.e_plant_hepatica), "Az f Condition nem teljesül")
-        self.assertTrue(f.check(etree.fromstring("<PLANT/>")), "Az f Condition nem teljesül")
-        self.assertTrue(f.check(etree.fromstring("<Plant/>")), "Az f Condition nem teljesül")
-        self.assertFalse(f.check(self.e_plant_columbine[1]), "Az f Condition nem hamis")
-        self.assertFalse(f.check(etree.fromstring("<plant2/>")), "Az f Condition nem hamis")
+        c = Condition(["PLANT", "plant", "Plant"])
+        self.assertTrue(c.check(self.e_plant_hepatica))
+        self.assertTrue(c.check(etree.fromstring("<PLANT/>")))
+        self.assertTrue(c.check(etree.fromstring("<Plant/>")))
+        self.assertFalse(c.check(self.e_plant_columbine[1]))
+        self.assertFalse(c.check(etree.fromstring("<plant2/>")))
 
     def test_only_attrib(self):
-        pass
+        c = Condition(attrib={"participantFK": "100612"})
+        self.assertTrue(c.check(self.e_lineup))
+        self.assertFalse(c.check(self.e_plant_hepatica))
+
+        c = Condition(attrib={"participantFK": ["100612", "100000"]})
+        self.assertTrue(c.check(self.e_lineup))
+
+        c = Condition(attrib={"participantFK": True})
+        self.assertTrue(c.check(self.e_lineup))
+        self.assertFalse(c.check(self.e_plant_hepatica))
+
+        c = Condition(attrib={"participantFK": re.compile("\d+")})
+        self.assertTrue(c.check(self.e_lineup))
+
+        c = Condition(attrib={"participantFK": lambda d: int(d) > 10000})
+        self.assertTrue(c.check(self.e_lineup))
+
+    def test_wrong_conditions(self):
+        with self.assertRaises(AttributeError):
+            Condition(5)
+        with self.assertRaises(AttributeError):
+            Condition(("plant", "PLANT"))
+        with self.assertRaises(AttributeError):
+            Condition(parent=Condition(children="CHILD"))
 
 if __name__ == '__main__':
     unittest.main()
