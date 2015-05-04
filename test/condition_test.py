@@ -14,11 +14,18 @@ class ConditionTest(unittest.TestCase):
                                                  "<LIGHT>Mostly Shady</LIGHT><PRICE>$4.45</PRICE>" +
                                                  "<AVAILABILITY>012699""</AVAILABILITY></PLANT>")
 
-        self.e_plant_columbine = etree.fromstring("<PLANT><COMMON>Columbine</COMMON><BOTANICAL>" +
-                                                  "Aquilegia canadensis</BOTANICAL><ZONE>3</ZONE>" +
-                                                  "<LIGHT>Mostly " +
-                                                  "Shady</LIGHT><PRICE>$9.37</PRICE>" +
-                                                  "<AVAILABILITY>030699</AVAILABILITY></PLANT>")
+        self.e_plant_columbine = etree.fromstring(
+            """
+<PLANT>
+    <COMMON>Columbine</COMMON>
+    <BOTANICAL>Aquilegia canadensis</BOTANICAL>
+    <ZONE>3</ZONE>
+    <LIGHT>Mostly Shady</LIGHT>
+    <PRICE>$9.37</PRICE>
+    <AVAILABILITY>030699</AVAILABILITY>
+</PLANT>
+            """
+        )
 
         self.e_lineup = etree.fromstring('<lineup event_participantsFK="2278405" participantFK=' +
                                          '"100612" lineup_typeFK="5" shirt_number="0" pos="0" ' +
@@ -51,11 +58,13 @@ class ConditionTest(unittest.TestCase):
         self.assertFalse(c.check(self.e_plant_columbine[1]))
         self.assertFalse(c.check(etree.fromstring("<plant2/>")))
 
-        c = Condition(["PLANT", "plant", "Plant", re.compile("plant", re.I)])
+        c = Condition(["PLANT", "plant", "Plant", re.compile("plant", re.I), lambda s: re.match(
+            "cat", s, re.I) is not None])
         self.assertTrue(c.check(self.e_plant_hepatica))
         self.assertTrue(c.check(etree.fromstring("<PLANT/>")))
         self.assertTrue(c.check(etree.fromstring("<Plant/>")))
         self.assertTrue(c.check(etree.fromstring("<PlAnT/>")))
+        self.assertTrue(c.check(etree.fromstring("<CATALOG/>")))
         self.assertFalse(c.check(etree.fromstring("<plant2/>")))
         self.assertFalse(c.check(self.e_plant_columbine[1]))
 
@@ -64,7 +73,7 @@ class ConditionTest(unittest.TestCase):
         self.assertTrue(c.check(self.e_lineup))
         self.assertFalse(c.check(self.e_plant_hepatica))
 
-        c = Condition(attrib={"participantFK": ["100612", "100000"]})
+        c = Condition(attrib={"participantFK": [lambda d: int(d) > 100100, "100000"]})
         self.assertTrue(c.check(self.e_lineup))
 
         c = Condition(attrib={"participantFK": True})
@@ -79,11 +88,17 @@ class ConditionTest(unittest.TestCase):
 
     def test_wrong_conditions(self):
         with self.assertRaises(AttributeError):
+            # Invalid tagname
             Condition(5)
         with self.assertRaises(AttributeError):
+            # Tuple instead of list. Tuple means initialize list
             Condition(("plant", "PLANT"))
         with self.assertRaises(AttributeError):
+            # Search by sibling.
             Condition(parent=Condition(children="CHILD"))
+        with self.assertRaises(AttributeError):
+            # Cannot search attribute non-existance
+            Condition(attrib={"participantFK": False})
 
 if __name__ == '__main__':
     unittest.main()

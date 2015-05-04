@@ -14,10 +14,6 @@ except ImportError:
     LXML = False
 
 
-def debug(*s):
-    print(*s)
-
-
 class Condition():
     """
     Condition class for filtering the XML parse events.
@@ -104,12 +100,12 @@ class Condition():
                     if l(s):
                         return True
                 return False
-            # return lambda s: s in tag
+
             return checktag
 
-        elif tag is True:  # Ha csak létezést vizsgálunk, akkor igaz. todo:
-            return lambda s: True
-        elif not tag:  # If none, every tagname will be accepted.
+        elif tag is True:  # True only if exists.
+            return lambda s: not not s
+        elif tag is None:  # If none, everything will be accepted.
             return lambda s: True
         else:
             raise AttributeError("Unexpected attribute as tag/text name filter! {}".format(type(
@@ -180,8 +176,15 @@ class Condition():
             return False
         if not self._attrib(element.attrib):                    # Checking attribs
             return False
-        if not self._text(element.text):                        # Checking text
-            return False
+        # if not self._text(element.text.strip()):                  # Checking text
+        #     return False
+        #  todo: Üres text vs. whitespace
+        if element.text is None:
+            if not self._text(None):
+                return False
+        else:
+            if not self._text(element.text.strip()):
+                return False
 
         # CSAK lxml.ElementTree todo: WORKAROUND
         if LXML:
