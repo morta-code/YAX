@@ -35,6 +35,14 @@ class ConditionTest(unittest.TestCase):
                                          '"3082" enetSportID="ih" del="no" n="0" ut="2010-10-05 ' +
                                          '15:26:58" id="100612"></participant></lineup>')
 
+        self.e_lineup2 = etree.fromstring(
+            """
+<lineup event_participantsFK="2278405" participantFK="99417" lineup_typeFK="5" shirt_number="0" pos="0" enet_pos="0" del="no" n="0" ut="2011-03-14 23:46:57" id="2743037">
+    <participant name="Brett Lebda" gender="undefined" type="athlete" countryFK="16" enetID="2368" enetSportID="ih" del="no" n="1" ut="2010-10-05 12:57:57" id="99417"></participant>
+</lineup>
+            """
+        )
+
     def tearDown(self):
         pass
 
@@ -72,19 +80,58 @@ class ConditionTest(unittest.TestCase):
         c = Condition(attrib={"participantFK": "100612"})
         self.assertTrue(c.check(self.e_lineup))
         self.assertFalse(c.check(self.e_plant_hepatica))
+        self.assertFalse(c.check(self.e_lineup2))
 
         c = Condition(attrib={"participantFK": [lambda d: int(d) > 100100, "100000"]})
         self.assertTrue(c.check(self.e_lineup))
+        self.assertFalse(c.check(self.e_plant_hepatica))
 
         c = Condition(attrib={"participantFK": True})
         self.assertTrue(c.check(self.e_lineup))
+        self.assertTrue(c.check(self.e_lineup2))
         self.assertFalse(c.check(self.e_plant_hepatica))
 
         c = Condition(attrib={"participantFK": re.compile("\d+")})
         self.assertTrue(c.check(self.e_lineup))
+        self.assertTrue(c.check(self.e_lineup2))
+        self.assertFalse(c.check(self.e_plant_hepatica))
 
-        c = Condition(attrib={"participantFK": lambda d: int(d) > 10000})
+        c = Condition(attrib={"participantFK": lambda d: int(d) > 100000})
         self.assertTrue(c.check(self.e_lineup))
+        self.assertFalse(c.check(self.e_lineup2))
+
+        c = Condition(attrib={"name": re.compile("Brett.*"), "countryFK": lambda s: int(s) > 1,
+                              "del": True})
+        self.assertFalse(c.check(self.e_lineup2))
+        self.assertTrue(c.check(self.e_lineup2[0]))
+        self.assertFalse(c.check(self.e_lineup[0]))
+
+    def test_only_text(self):
+        c = Condition(text="Hepatica")
+        self.assertFalse(c.check(self.e_plant_hepatica))
+        self.assertFalse(c.check(self.e_plant_hepatica[1]))
+        self.assertTrue(c.check(self.e_plant_hepatica[0]))
+
+        c = Condition(text=re.compile("Hepatica"))
+        self.assertFalse(c.check(self.e_plant_hepatica))
+        self.assertFalse(c.check(self.e_plant_hepatica[1]))
+        self.assertTrue(c.check(self.e_plant_hepatica[0]))
+
+        c = Condition(text=re.compile("Hepatica.*"))
+        self.assertFalse(c.check(self.e_plant_hepatica))
+        self.assertTrue(c.check(self.e_plant_hepatica[1]))
+        self.assertTrue(c.check(self.e_plant_hepatica[0]))
+
+        c = Condition(text=True)
+        self.assertFalse(c.check(self.e_plant_columbine))
+        self.assertTrue(c.check(self.e_plant_columbine[0]))
+
+        c = Condition(text=[re.compile("Hepatica.*"), "Columbine", lambda x: float(x[1:]) < 5])
+        self.assertFalse(c.check(self.e_plant_columbine))
+        self.assertTrue(c.check(self.e_plant_columbine[0]))
+        self.assertTrue(c.check(self.e_plant_hepatica[1]))
+        self.assertTrue(c.check(self.e_plant_hepatica[4]))
+        self.assertFalse(c.check(self.e_plant_columbine[4]))
 
     def test_wrong_conditions(self):
         with self.assertRaises(AttributeError):

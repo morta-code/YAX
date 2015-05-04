@@ -89,7 +89,7 @@ class Condition():
         elif isinstance(tag, str):  # The lam.expr. will compare
             return lambda s: s == tag
         elif isinstance(tag, RE):  # The l.exp. checks with fullmatch
-            return lambda s: tag.fullmatch(s) is not None
+            return lambda s: s is not None and tag.fullmatch(s) is not None
         elif isinstance(tag, list):  # The l.ex. checks the containing (str!)
             taglist = list()
             for t in tag:
@@ -171,29 +171,31 @@ class Condition():
         return True
 
     def _check(self, element) -> bool:
-        # If any part of condition is false, return with false.
-        if not self._tag(element.tag):                          # Checking tagname
-            return False
-        if not self._attrib(element.attrib):                    # Checking attribs
-            return False
-        # if not self._text(element.text.strip()):                  # Checking text
-        #     return False
-        #  todo: Üres text vs. whitespace
-        if element.text is None:
-            if not self._text(None):
+        try:
+            # If any part of condition is false, return with false.
+            if not self._tag(element.tag):                          # Checking tagname
                 return False
-        else:
-            if not self._text(element.text.strip()):
+            if not self._attrib(element.attrib):                    # Checking attribs
                 return False
+            # if not self._text(element.text):                  # Checking text
+            #     return False
+            #  todo: Üres text vs. whitespace
+            if element.text is None:
+                if not self._text(None):
+                    return False
+            else:
+                if not self._text(element.text.strip()):
+                    return False
 
-        # CSAK lxml.ElementTree todo: WORKAROUND
-        if LXML:
-            if not self._parent.check(element.getparent()):     # Checking parent
+            # CSAK lxml.ElementTree todo: WORKAROUND
+            if LXML:
+                if not self._parent.check(element.getparent()):     # Checking parent
+                    return False
+
+            if not self._check_children(element):                   # Checking children
                 return False
-
-        if not self._check_children(element):                   # Checking children
+        except:
             return False
-
         return True
 
     def _inverted_check(self, element) -> bool:
