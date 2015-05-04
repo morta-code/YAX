@@ -76,7 +76,7 @@ class ConditionTest(unittest.TestCase):
         self.assertFalse(c.check(etree.fromstring("<plant2/>")))
         self.assertFalse(c.check(self.e_plant_columbine[1]))
 
-    def test_only_attrib(self):
+    def test_only_attrib_condition(self):
         c = Condition(attrib={"participantFK": "100612"})
         self.assertTrue(c.check(self.e_lineup))
         self.assertFalse(c.check(self.e_plant_hepatica))
@@ -106,7 +106,7 @@ class ConditionTest(unittest.TestCase):
         self.assertTrue(c.check(self.e_lineup2[0]))
         self.assertFalse(c.check(self.e_lineup[0]))
 
-    def test_only_text(self):
+    def test_only_text_condition(self):
         c = Condition(text="Hepatica")
         self.assertFalse(c.check(self.e_plant_hepatica))
         self.assertFalse(c.check(self.e_plant_hepatica[1]))
@@ -132,6 +132,53 @@ class ConditionTest(unittest.TestCase):
         self.assertTrue(c.check(self.e_plant_hepatica[1]))
         self.assertTrue(c.check(self.e_plant_hepatica[4]))
         self.assertFalse(c.check(self.e_plant_columbine[4]))
+
+    def test_complex_conditions(self):
+        c = Condition("PLANT", children={"tag": "PRICE", "text": lambda x: float(x[1:]) < 5.1})
+        self.assertTrue(c.check(self.e_plant_hepatica))
+        self.assertFalse(c.check(self.e_plant_columbine))
+
+        c = Condition("PLANT", children=("PRICE", None, "$4.45"))
+        self.assertTrue(c.check(self.e_plant_hepatica))
+
+        c = Condition("PLANT", children=[{"tag": "PRICE", "text": "$4.45"}, "COMMON"])
+        self.assertTrue(c.check(self.e_plant_hepatica))
+        self.assertFalse(c.check(etree.fromstring("""
+        <PLANT>
+            <PRICE>$4.45</PRICE>
+            <NAME>name</NAME>
+        </PLANT>
+        """)))
+
+        c = Condition(tag=["PLANT", "plant"],
+                      parent=("CATALOG", {'name': "first"}),
+                      children=[("PRICE", None, "$5"), ("NAME", None, re.compile("[A-Z]\w*"))],
+                      keep_children=Condition(text=True))
+        self.assertFalse(c.check(self.e_plant_hepatica))
+        self.assertTrue(c.check(etree.fromstring("""
+        <CATALOG name="first">
+            <plant>
+                <PRICE>$5</PRICE>
+                <NAME>Nagybetu</NAME>
+            </plant>
+        </CATALOG>
+        """)[0]))
+        self.assertFalse(c.check(etree.fromstring("""
+        <CATALOG>
+            <plant>
+                <PRICE>$5</PRICE>
+                <NAME>Nagybetu</NAME>
+            </plant>
+        </CATALOG>
+        """)[0]))
+        self.assertFalse(c.check(etree.fromstring("""
+        <CATALOG name="first">
+            <PLANT>
+                <PRICE>$5</PRICE>
+                <NAME>kisbetu</NAME>
+            </PLANT>
+        </CATALOG>
+        """)[0]))
 
     def test_wrong_conditions(self):
         with self.assertRaises(AttributeError):
