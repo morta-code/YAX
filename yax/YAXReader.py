@@ -202,8 +202,10 @@ class Condition():
         return not self._check(element)
 
     def keep(self, element) -> bool:
-        parent = element.getparent()                    # Don't keep the root element
-        if not parent or not self._tag(parent.tag):     # Element's parent must be match
+        parent = element.getparent()
+        if parent is None:
+            return True
+        if not self._tag(parent.tag):     # Element's parent must be match
             return False
         for ch_cond in self._children:                  # Keep if it is in the children conditions
             if ch_cond.check(element):
