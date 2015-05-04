@@ -95,13 +95,25 @@ class Condition():
         elif isinstance(tag, RE):  # The l.exp. checks with fullmatch
             return lambda s: tag.fullmatch(s) is not None
         elif isinstance(tag, list):  # The l.ex. checks the containing (str!)
-            return lambda s: s in tag
+            taglist = list()
+            for t in tag:
+                taglist.append(Condition.normalize_tag(t))
+
+            def checktag(s):
+                for l in taglist:
+                    if l(s):
+                        return True
+                return False
+            # return lambda s: s in tag
+            return checktag
+
         elif tag is True:  # Ha csak létezést vizsgálunk, akkor igaz. todo:
             return lambda s: True
         elif not tag:  # If none, every tagname will be accepted.
             return lambda s: True
         else:
-            raise AttributeError("Unexpected attribute as tag name filter! {}".format(type(tag)))
+            raise AttributeError("Unexpected attribute as tag/text name filter! {}".format(type(
+                tag)))
 
     @staticmethod
     def normalize_attrib(attrib):
@@ -125,21 +137,6 @@ class Condition():
         else:
             raise AttributeError("Unexpected attribute as attrib filter! {}".format(type(attrib)))
 
-    @staticmethod
-    def normalize_text(text):
-        if callable(text):
-            return text
-        elif isinstance(text, str):
-            return lambda s: s == text
-        elif isinstance(text, RE):
-            return lambda s: text.fullmatch(s) is not None
-        elif isinstance(text, list):
-            return lambda s: s in text
-        elif not text:
-            return lambda s: True
-        else:
-            raise AttributeError("Unexpected attribute as text filter! {}".format(type(text)))
-
     def __init__(self, tag=None, attrib=None, text=None,
                  parent=None, children=None, keep_children=None):
 
@@ -148,7 +145,7 @@ class Condition():
         # condition attributes (check callables will be created):
         self._tag = Condition.normalize_tag(tag)
         self._attrib = Condition.normalize_attrib(attrib)
-        self._text = Condition.normalize_text(text)
+        self._text = Condition.normalize_tag(text)
         self._parent = Condition.normalize_condition(parent, allow_children=False)
         self._children = Condition.normalize_children(children)
         self._keep = Condition.normalize_children(keep_children)

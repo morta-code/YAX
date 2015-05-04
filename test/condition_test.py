@@ -51,12 +51,13 @@ class ConditionTest(unittest.TestCase):
         self.assertFalse(c.check(self.e_plant_columbine[1]))
         self.assertFalse(c.check(etree.fromstring("<plant2/>")))
 
-        c = Condition(["PLANT", "plant", "Plant"])
+        c = Condition(["PLANT", "plant", "Plant", re.compile("plant", re.I)])
         self.assertTrue(c.check(self.e_plant_hepatica))
         self.assertTrue(c.check(etree.fromstring("<PLANT/>")))
         self.assertTrue(c.check(etree.fromstring("<Plant/>")))
-        self.assertFalse(c.check(self.e_plant_columbine[1]))
+        self.assertTrue(c.check(etree.fromstring("<PlAnT/>")))
         self.assertFalse(c.check(etree.fromstring("<plant2/>")))
+        self.assertFalse(c.check(self.e_plant_columbine[1]))
 
     def test_only_attrib(self):
         c = Condition(attrib={"participantFK": "100612"})
