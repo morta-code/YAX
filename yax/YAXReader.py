@@ -88,11 +88,6 @@ class Condition():
 
     @staticmethod
     def normalize_tag(tag):
-        """
-        Condition tag field to lambda expression
-        :param tag:
-        :return: a bool lambda value
-        """
         if callable(tag):  # A (hopefully) bool expression
             return tag
         elif isinstance(tag, str):  # The lam.expr. will compare
@@ -113,14 +108,16 @@ class Condition():
         if not attrib:
             return lambda d: True
         elif isinstance(attrib, dict):
+            if len(attrib) == 0:
+                return lambda d: True
             for k, v in attrib.items():
                 attrib[k] = Condition.normalize_tag(v)
 
             def checkarttr(d: dict):
                 # Ha van olyan feltétel, amire nincs attr, vagy amire nem stimmel, álljon le.
-                for curr_k, curr_v in d.items():
-                    check = attrib.get(curr_k)
-                    if not check or not check(curr_v):
+                for key, check in attrib.items():
+                    val = d.get(key)
+                    if not val or not check(val):
                         return False
                 return True
 
@@ -136,7 +133,7 @@ class Condition():
             return lambda s: s == text
         elif isinstance(text, RE):
             return lambda s: text.fullmatch(s) is not None
-        elif isinstance(text, (tuple, list)):
+        elif isinstance(text, list):
             return lambda s: s in text
         elif not text:
             return lambda s: True
@@ -181,19 +178,20 @@ class Condition():
         return True
 
     def _check(self, element) -> bool:
-        if not self._tag(element.tag):  # If tagname doesn't match, element cannot match
+        # If any part of condition is false, return with false.
+        if not self._tag(element.tag):                          # Checking tagname
             return False
-        if not self._attrib(element.attrib):  # If attrib doesn't match, element doesn't match
+        if not self._attrib(element.attrib):                    # Checking attribs
             return False
-        if not self._text(element.text):  # If text doesn't match, element doesn't match
+        if not self._text(element.text):                        # Checking text
             return False
 
         # CSAK lxml.ElementTree todo: WORKAROUND
         if LXML:
-            if not self._parent.check(element.getparent()):  # The parents checked recursivelly.
+            if not self._parent.check(element.getparent()):     # Checking parent
                 return False
 
-        if not self._check_children(element):
+        if not self._check_children(element):                   # Checking children
             return False
 
         return True
@@ -202,13 +200,13 @@ class Condition():
         return not self._check(element)
 
     def keep(self, element) -> bool:
-        parent = element.getparent()
-        if not parent or not self._tag(parent.tag):
+        parent = element.getparent()                    # Don't keep the root element
+        if not parent or not self._tag(parent.tag):     # Element's parent must be match
             return False
-        for ch_cond in self._children:
+        for ch_cond in self._children:                  # Keep if it is in the children conditions
             if ch_cond.check(element):
                 return True
-        for keep_cond in self._keep:
+        for keep_cond in self._keep:                    # Keep if it is in the keep conditions
             if keep_cond.check(element):
                 return True
         return False
@@ -222,7 +220,7 @@ class CallbackRunner():
     ATTRIB_PREFIX = "-"
 
     @staticmethod
-    def _default():
+    def _default(*args):
         pass
 
     @staticmethod
@@ -324,24 +322,25 @@ class YAXReader():
         del self.stream
 
     def start(self, chunk_size=10000):
+        # This is the main part of the element processing.
+        def process_element(e):
+            keep = False                            # Do not keep anything by default.
+            for cond, cb_runner in self._cnds:      # For all conditions.
+                if cond.check(e):                   # When matches, run the callback.
+                    cb_runner(e)
+                if keep:                            # If already keep, go to next.
+                    continue
+                if cond.keep(e):                    # If has to be kept, set keep.
+                    keep = True
+            if not keep:                            # After all condition delete if not keep.
+                del e.getparent()[e.getparent().index(e)]
+
         if not self._stream:
             raise AttributeError("Input stream is not initialized.")
         elif self._stream.closed:
             raise AttributeError("The input stream is closed.")
-
-        def process_element(e):
-            keep = False
-            for cond, cb_runner in self._cnds:
-                if cond.check(e):
-                    cb_runner(e)
-                if keep:
-                    continue
-                if cond.keep(e):
-                    keep = True
-            if not keep:
-                del e.getparent()[e.getparent().index(e)]
-
         parser = etree.XMLPullParser(events=('end',))
+        # Reading the stream until end.
         chunk = self._stream.read(chunk_size)
         while not chunk == "":
             parser.feed(chunk)
