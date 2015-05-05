@@ -222,6 +222,7 @@ class CallbackRunner():
     DICT = 3
     JSON_DICT = 4
     ATTRIB_PREFIX = "-"
+    TEXT_PREFIX = "#"
 
     @staticmethod
     def _default(*args):
@@ -250,9 +251,10 @@ class CallbackRunner():
 
     @staticmethod
     def _convert_to_json_dict(e):
-        # Catalog: {-name: "first", PLANT: [{name: "Rózsa", }, {name: "Liliom",}]}
-        # todo: ez nagyon szar, vagy? NINCS TESZTELVE
-        d = {}
+        tag = e.tag
+        text = [e.text.strip() if e.text is not None else "", ]
+        d = dict()
+
         for a, v in e.attrib.items():
             if d.get(CallbackRunner.ATTRIB_PREFIX + a):
                 c = d[CallbackRunner.ATTRIB_PREFIX + a]
@@ -262,17 +264,32 @@ class CallbackRunner():
                     d[CallbackRunner.ATTRIB_PREFIX + a] = [c, v]
             else:
                 d[CallbackRunner.ATTRIB_PREFIX + a] = v
+
         for child in list(e):
             ch = CallbackRunner._convert_to_json_dict(child)
             if d.get(child.tag):
                 c = d[child.tag]
                 if isinstance(c, list):
-                    c.append(ch)
+                    c.append(ch[child.tag])
                 else:
-                    d[child.tag] = [c, ch]
+                    d[child.tag] = [c, ch[child.tag]]
             else:
-                d[child.tag] = ch
-        return d
+                d[child.tag] = ch[child.tag]
+
+            text.append(child.tail.strip() if child.tail is not None else "")
+
+        # clean text
+        for t in text:
+            if t == "":
+                text.remove(t)
+        if len(text) == 1:
+            text = text[0]
+        # add text if exists
+        if len(d) == 0:
+            d = text
+        elif text:
+            d[CallbackRunner.TEXT_PREFIX+"text"] = text
+        return {tag: d}
 
 
     @staticmethod
