@@ -194,5 +194,6 @@ class ConditionTest(unittest.TestCase):
             # Cannot search attribute non-existance
             Condition(attrib={"participantFK": False})
 
+
 if __name__ == '__main__':
     unittest.main()
