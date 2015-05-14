@@ -5,7 +5,7 @@ import re
 
 RE = type(re.compile(""))
 try:
-    raise ImportError("LXML module has a bug.")
+    # raise ImportError("LXML module has a bug.")
     import lxml.etree as etree
     LXML = True
 except ImportError:
@@ -370,16 +370,24 @@ class CallbackRunner():
 
 
 class YAXReader():
-    def __init__(self, stream: io.TextIOBase=None):
+    def __init__(self, stream=None, use_lxml=True):
         self._cnds = []
         self._stream = stream
+        global LXML
+        global etree
+        if LXML and use_lxml:
+            pass
+        else:
+            del etree
+            import xml.etree.ElementTree as etree
+            LXML = False
 
     @property
-    def stream(self) -> io.TextIOBase:
+    def stream(self):
         return self._stream
 
     @stream.setter
-    def stream(self, stream: io.TextIOBase):
+    def stream(self, stream):
         self._stream = stream
 
     @stream.deleter
@@ -394,20 +402,39 @@ class YAXReader():
         elif self._stream.closed:
             raise AttributeError("The input stream is closed.")
         if LXML:
+            # parser = etree.XMLPullParser(events=('end',))
+            # chunk = self._stream.read(chunk_size)
+            # while chunk:
+            #     parser.feed(chunk)
+            #     for action, element in parser.read_events():
+            #         keep = False                            # Do not keep anything by default.
+            #         for cond, cb_runner in self._cnds:      # For all conditions.
+            #             if cond.check(element):             # When matches, run the callback.
+            #                 cb_runner(element)
+            #             if not keep and cond.keep(element):         # If has to be kept, set keep.
+            #                 keep = True
+            #         if not keep:                        # After all condition delete if not keep.
+            #             # del element.getparent()[element.getparent().index(element)]
+            #             element.getparent().remove(element)
+            #     chunk = self._stream.read(chunk_size)
             parser = etree.XMLPullParser(events=('end',))
+            prev_parent = None
+            prev_element = None
+            keep = False
             chunk = self._stream.read(chunk_size)
             while chunk:
                 parser.feed(chunk)
                 for action, element in parser.read_events():
-                    keep = False                            # Do not keep anything by default.
-                    for cond, cb_runner in self._cnds:      # For all conditions.
-                        if cond.check(element):             # When matches, run the callback.
+                    if not keep and prev_parent is not None:
+                        prev_parent.remove(prev_element)
+                    keep = False
+                    for cond, cb_runner in self._cnds:
+                        if cond.check(element):
                             cb_runner(element)
-                        if not keep and cond.keep(element):         # If has to be kept, set keep.
+                        if not keep and cond.keep(element):
                             keep = True
-                    if not keep:                        # After all condition delete if not keep.
-                        # del element.getparent()[element.getparent().index(element)]
-                        element.getparent().remove(element)
+                    prev_parent = element.getparent()
+                    prev_element = element
                 chunk = self._stream.read(chunk_size)
         else:
             parser = etree.XMLPullParser(events=('end', 'start'))
