@@ -151,7 +151,7 @@ class Condition():
         self._children = Condition.normalize_children(children)
         self._keep = Condition.normalize_children(keep_children)
 
-    def inverse_(self):
+    def inverse(self):
         """
         Negate the current condition
         :return: The negated condition itself.
@@ -250,7 +250,7 @@ class Condition():
         return False
 
     def _keep_xml(self, element, parents) -> bool:
-        if len(parents) == 0:
+        if not len(parents) > 0:
             return True
         if not self._tag(parents[-1].tag):     # Element's parent must be match
             return False
@@ -345,10 +345,11 @@ class CallbackRunner():
     def _convert_to_element(e):
         return e
 
-    def __init__(self, t: int, attrib_prefix='-'):
+    def __init__(self, t: int, attrib_prefix='-', text_prefix='#'):
         self._callback = CallbackRunner._default
         self._type = t
         CallbackRunner.ATTRIB_PREFIX = attrib_prefix
+        CallbackRunner.TEXT_PREFIX = text_prefix
         if t == CallbackRunner.ETREE:
             self._convert = CallbackRunner._convert_to_element
         elif t == CallbackRunner.STRING:
@@ -395,6 +396,9 @@ class YAXReader():
         if self._stream:
             self._stream.close()
         del self._stream
+
+    def lxml_in_use(self):
+        return LXML
 
     def start(self, chunk_size=8192):
         if not self._stream:
@@ -453,7 +457,7 @@ class YAXReader():
                                 cb_runner(element)
                             if not keep and cond.keep(element, parents):
                                 keep = True
-                        if not keep:                        # After all condition delete if not keep.
+                        if not keep and len(parents) > 0:
                             parents[-1].remove(element)
                 chunk = self._stream.read(chunk_size)
         del self.stream
