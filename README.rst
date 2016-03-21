@@ -20,7 +20,8 @@ Installation
 Usage
 ~~~~~
 A simple example which prints all the elements with tagname "a" and containing "href" attribute:
-::
+
+.. code:: python
 
     import yax
 
@@ -31,7 +32,8 @@ A simple example which prints all the elements with tagname "a" and containing "
     yr.start()
 
 A bit more complex example which filters a gpx record. It prints the elevation values of the trackpoints in a specified area:
-::
+
+.. code:: python
 
     import yax
 
