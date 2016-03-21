@@ -1,269 +1,86 @@
+import re
+import inspect
+from condition import Condition
+import warnings
+
 __author__ = 'Móréh, Tamás'
 
-import io
-import re
 
+# Type of compiled regexes
 RE = type(re.compile(""))
-try:
-    # raise ImportError("LXML module has a bug.")
-    import lxml.etree as etree
-    LXML = True
-except ImportError:
-    import xml.etree.ElementTree as etree
-    LXML = False
 
 
-class Condition():
-    """
-    Condition class for filtering the XML parse events.
-    If the condition satisfies the callback function will be called.
-    """
-
-    class EmptyCondition():
-        def __init__(self, b: bool):
-            self._return_default = b
-
-        def check(self, *p):
-            return self._return_default
+def element_to_string(element, encoding="unicode", method="xml", xml_declaration=None,
+                      pretty_print=False, with_tail=True, standalone=None, doctype=None,
+                      exclusive=False, with_comments=True, inclusive_ns_prefixes=None):
+    return YAXReader.etree.tostring(element, encoding=encoding, method=method,
+                                    xml_declaration=xml_declaration, pretty_print=pretty_print,
+                                    with_tail=with_tail, standalone=standalone, doctype=doctype,
+                                    exclusive=exclusive, with_comments=with_comments,
+                                    inclusive_ns_prefixes=inclusive_ns_prefixes)
 
 
-    @staticmethod
-    def normalize_condition(cnd, allow_parents=True, allow_children=True, none_answer=True,
-                            allow_none=True):
-        def check_child(c):
-            if isinstance(c, Condition) and not allow_children:
-                if len(c._children) != 0:
-                    raise AttributeError("Checking children of parents not allowed!")
+def element_to_cmplx_dict(element):
+    # {tag: "", attrib: {}, text: "", children: {}, childlist: []}
+    d = dict()
+    d["tag"] = element.tag
+    d["attrib"] = element.attrib
+    d["text"] = element.text
+    chd = {}
+    chl = []
+    for child in list(element):
+        cd = element_to_cmplx_dict(child)
+        chl.append(cd)
+        chd[cd["tag"]] = cd
+    d["children"] = chd
+    d["childlist"] = chl
+    return d
 
-        def check_parent(c):
-            if isinstance(c, Condition) and not allow_parents:
-                if not isinstance(c._parent, Condition.EmptyCondition):
-                    raise AttributeError("Checking parents of child not allowed!")
 
-        if isinstance(cnd, (str, RE)):
-            return Condition(cnd)
-        elif isinstance(cnd, bool):
-            return Condition.EmptyCondition(cnd)
-        elif cnd is None and allow_none:
-            return Condition.EmptyCondition(none_answer)
-        elif isinstance(cnd, (Condition, Condition.EmptyCondition)):
-            check_child(cnd)
-            check_parent(cnd)
-            return cnd
-        elif isinstance(cnd, dict):
-            c = Condition(cnd.get('tag'), cnd.get('attrib'), cnd.get('text'),
-                          cnd.get('parent'), cnd.get('children'), cnd.get("keep_children"))
-            check_child(c)
-            check_parent(c)
-            return c
-        elif isinstance(cnd, tuple):
-            if len(cnd) == 0:
-                return Condition.EmptyCondition(none_answer)
-            c = Condition(*cnd)
-            check_child(c)
-            check_parent(c)
-            return c
-        else:
-            raise AttributeError("Unexpected attribute as condition! {}".format(type(cnd)))
+def element_to_json_dict(element, attrib_prefix="-", text_prefix="#"):
+    tag = element.tag
+    text = [element.text.strip() if element.text is not None else "", ]
+    d = dict()
 
-    @staticmethod
-    def normalize_children(cnd) -> list:
-        if cnd is None:
-            return []
-        if isinstance(cnd, list):
-            newcnd = list()
-            for c in cnd:
-                # itt nem lehet EmptyCondition
-                newcnd.append(
-                    Condition.normalize_condition(c, allow_parents=False, allow_none=False))
-            return newcnd
-        else:
-            # itt nem lehet EmptyCondition
-            return [Condition.normalize_condition(cnd, allow_parents=False, allow_none=False), ]
-
-    @staticmethod
-    def normalize_tag(tag):
-        if callable(tag):  # A (hopefully) bool expression
-            return tag
-        elif isinstance(tag, str):  # The lam.expr. will compare
-            return lambda s: s == tag
-        elif isinstance(tag, RE):  # The l.exp. checks with fullmatch
-            # return lambda s: s is not None and tag.fullmatch(s) is not None
-            return lambda s: tag.fullmatch(s) is not None
-        elif isinstance(tag, list):  # The l.ex. checks the containing (str!)
-            taglist = list()
-            for t in tag:
-                taglist.append(Condition.normalize_tag(t))
-
-            def checktag(s):
-                for l in taglist:
-                    if l(s):
-                        return True
-                return False
-
-            return checktag
-
-        elif tag is True:  # True only if exists.
-            return lambda s: not not s
-        elif tag is None:  # If none, everything will be accepted.
-            return lambda s: True
-        else:
-            raise AttributeError("Unexpected attribute as tag/text name filter! {}".format(type(
-                tag)))
-
-    @staticmethod
-    def normalize_attrib(attrib):
-        if not attrib:
-            return lambda d: True
-        elif isinstance(attrib, dict):
-            if len(attrib) == 0:
-                return lambda d: True
-            for k, v in attrib.items():
-                attrib[k] = Condition.normalize_tag(v)
-
-            def checkarttr(d: dict):
-                # Ha van olyan feltétel, amire nincs attr, vagy amire nem stimmel, álljon le.
-                for key, check in attrib.items():
-                    val = d.get(key)
-                    if not val or not check(val):
-                        return False
-                return True
-
-            return checkarttr
-        else:
-            raise AttributeError("Unexpected attribute as attrib filter! {}".format(type(attrib)))
-
-    def __init__(self, tag=None, attrib=None, text=None,
-                 parent=None, children=None, keep_children=None):
-
-        self._inverted = False  # self doesn't matches if would be match
-
-        # The LXML way has different methods:
-        self.check = self._check_lxml if LXML else self._check_xml
-        self.keep = self._keep_lxml if LXML else self._keep_xml
-        self._check_children = self._check_children_lxml if LXML else self._check_children_xml
-
-        # condition attributes (check callables will be created):
-        self._tag = Condition.normalize_tag(tag)
-        self._attrib = Condition.normalize_attrib(attrib)
-        self._text = Condition.normalize_tag(text)
-        self._parent = Condition.normalize_condition(parent, allow_children=False)
-        self._children = Condition.normalize_children(children)
-        self._keep = Condition.normalize_children(keep_children)
-
-    def inverse(self):
-        """
-        Negate the current condition
-        :return: The negated condition itself.
-        """
-        self._inverted = not self._inverted
-        if self._inverted:
-            self.check = self._inverted_check_lxml if LXML else self._inverted_check_xml
-        else:
-            self.check = self._check_lxml if LXML else self._check_xml
-        return self
-
-    def _check_children_lxml(self, element):
-        children = list(element)  # Every child-condition must be matching to a
-        for ch_cond in self._children:  # child
-            found = False
-            for child in children:
-                if ch_cond.check(child):
-                    found = True
-                    break
-            if not found:
-                return False
-        return True
-
-    def _check_children_xml(self, element):
-        children = list(element)  # Every child-condition must be matching to a
-        for ch_cond in self._children:  # child
-            found = False
-            for child in children:
-                if ch_cond.check(child, []):  # There is no way to check children's parents!
-                    found = True
-                    break
-            if not found:
-                return False
-        return True
-
-    def _check_lxml(self, element) -> bool:
-        try:
-            # If any part of condition is false, return with false.
-            if not self._tag(element.tag):                          # Checking tagname
-                return False
-            if not self._attrib(element.attrib):                    # Checking attribs
-                return False
-            if element.text is None:                                # Checking text
-                if not self._text(None):
-                    return False
+    for a, v in element.attrib.items():
+        if d.get(attrib_prefix + a):
+            c = d[attrib_prefix + a]
+            if isinstance(c, list):
+                c.append(v)
             else:
-                if not self._text(element.text.strip()):
-                    return False
-            if not self._parent.check(element.getparent()):     # Checking parent
-                return False
-            if not self._check_children(element):                   # Checking children
-                return False
-        except:
-            return False
-        return True
+                d[attrib_prefix + a] = [c, v]
+        else:
+            d[attrib_prefix + a] = v
 
-    def _check_xml(self, element, parents) -> bool:
-        try:
-            # If any part of condition is false, return with false.
-            if not self._tag(element.tag):                          # Checking tagname
-                return False
-            if not self._attrib(element.attrib):                    # Checking attribs
-                return False
-            if element.text is None:                                # Checking text
-                if not self._text(None):
-                    return False
+    for child in list(element):
+        text.append(child.tail.strip() if child.tail is not None else "")
+        ch = element_to_json_dict(child)
+        if d.get(child.tag):
+            c = d[child.tag]
+            if isinstance(c, list):
+                c.append(ch[child.tag])
             else:
-                if not self._text(element.text.strip()):
-                    return False
-            if not self._parent.check(parents[-1] if len(parents) > 0 else None, parents[:-1]):
-                    return False
-            if not self._check_children(element):                   # Checking children
-                return False
-        except:
-            return False
-        return True
+                d[child.tag] = [c, ch[child.tag]]
+        else:
+            d[child.tag] = ch[child.tag]
 
-    def _inverted_check_lxml(self, element) -> bool:
-        return not self._check_lxml(element)
-
-    def _inverted_check_xml(self, element) -> bool:
-        return not self._check_xml(element)
-
-    def _keep_lxml(self, element) -> bool:
-        parent = element.getparent()
-        if parent is None:
-            return True
-        if not self._tag(parent.tag):     # Element's parent must be match
-            return False
-        for ch_cond in self._children:                  # Keep if it is in the children conditions
-            if ch_cond.check(element):
-                return True
-        for keep_cond in self._keep:                    # Keep if it is in the keep conditions
-            if keep_cond.check(element):
-                return True
-        return False
-
-    def _keep_xml(self, element, parents) -> bool:
-        if not len(parents) > 0:
-            return True
-        if not self._tag(parents[-1].tag):     # Element's parent must be match
-            return False
-        for ch_cond in self._children:                  # Keep if it is in the children conditions
-            if ch_cond.check(element, parents):
-                return True
-        for keep_cond in self._keep:                    # Keep if it is in the keep conditions
-            if keep_cond.check(element, parents):
-                return True
-        return False
+    # clean text
+    t2 = []
+    for t in text:
+        if t:
+            t2.append(t)
+    text = t2
+    if len(text) == 1:
+        text = text[0]
+    # add text if exists
+    if len(d) == 0:
+        d = text
+    elif text:
+        d[text_prefix + "text"] = text
+    return {tag: d}
 
 
-class CallbackRunner():
+class CallbackRunner:
     ETREE = 1
     STRING = 2
     DICT = 3
@@ -277,7 +94,7 @@ class CallbackRunner():
 
     @staticmethod
     def _convert_to_string(e):
-        return etree.tostring(e)
+        return YAXReader.etree.tostring(e)
 
     @staticmethod
     def _convert_to_cmplx_dict(e):
@@ -324,7 +141,6 @@ class CallbackRunner():
             else:
                 d[child.tag] = ch[child.tag]
 
-
         # clean text
         t2 = []
         for t in text:
@@ -340,12 +156,12 @@ class CallbackRunner():
             d[CallbackRunner.TEXT_PREFIX+"text"] = text
         return {tag: d}
 
-
     @staticmethod
     def _convert_to_element(e):
         return e
 
-    def __init__(self, t: int, attrib_prefix='-', text_prefix='#'):
+    def __init__(self, t: int, attrib_prefix='-', text_prefix='#', condition: Condition=None):
+        self.condition = condition
         self._callback = CallbackRunner._default
         self._type = t
         CallbackRunner.ATTRIB_PREFIX = attrib_prefix
@@ -359,73 +175,63 @@ class CallbackRunner():
         elif t == CallbackRunner.JSON_DICT:
             self._convert = CallbackRunner._convert_to_json_dict
         else:
-            raise AttributeError("CallbackRunner type must be one of CallbackRunner.ETREE, " +
-                                 "CallbackRunner.STRING, CallbackRunner.JSON_DICT and " +
-                                 "CallbackRunner.DICT!")
+            raise Exception("CallbackRunner type must be one of CallbackRunner.ETREE, " +
+                            "CallbackRunner.STRING, CallbackRunner.JSON_DICT and " +
+                            "CallbackRunner.DICT!")
+
+    def inverted(self) -> Condition:
+        warnings.warn("This feature is waiting for a better implementation", FutureWarning)
+        self.condition.inverse()
+        return self
+
+    # TODO itt kell megvalósítani a visszaírást
 
     def calls(self, callback):
+        if not callable(callback):
+            raise Exception("The callback argument must be callable!")
+        ins = inspect.getfullargspec(callback)
+        if len(ins.args) < 2 and ins.varargs is None:
+            raise Exception("The callback funciton must can accept at least 2 arguments!\n" +
+                            "First: The element itself, Second: the line number.")
         self._callback = callback
 
     def __call__(self, element, line: int=0):
         self._callback(self._convert(element), line)
 
 
-class YAXReader():
-    def __init__(self, stream=None, use_lxml=True):
+class YAXReader:
+    etree = None  # todo példány szintre! (egyébként működik)
+
+    def __init__(self, stream=None, use_lxml=False):
         self._cnds = []
-        self._stream = stream
-        global LXML
-        global etree
-        if LXML and use_lxml:
-            pass
+        self.stream = stream
+        if use_lxml:
+            try:
+                import lxml.etree as etree
+                Condition.LXML = True
+            except ImportError:
+                import xml.etree.ElementTree as etree
+                Condition.LXML = False
         else:
-            del etree
             import xml.etree.ElementTree as etree
-            LXML = False
+            Condition.LXML = False
+        self.etree = etree
 
-    @property
-    def stream(self):
-        return self._stream
-
-    @stream.setter
-    def stream(self, stream):
-        self._stream = stream
-
-    @stream.deleter
-    def stream(self):
-        if self._stream:
-            self._stream.close()
-        del self._stream
-
-    def lxml_in_use(self):
-        return LXML
+    @staticmethod
+    def lxml_in_use():
+        return Condition.LXML
 
     def start(self, chunk_size=8192):
-        if not self._stream:
-            raise AttributeError("Input stream is not initialized.")
-        elif self._stream.closed:
-            raise AttributeError("The input stream is closed.")
-        if LXML:
-            # parser = etree.XMLPullParser(events=('end',))
-            # chunk = self._stream.read(chunk_size)
-            # while chunk:
-            #     parser.feed(chunk)
-            #     for action, element in parser.read_events():
-            #         keep = False                            # Do not keep anything by default.
-            #         for cond, cb_runner in self._cnds:      # For all conditions.
-            #             if cond.check(element):             # When matches, run the callback.
-            #                 cb_runner(element)
-            #             if not keep and cond.keep(element):         # If has to be kept, set keep.
-            #                 keep = True
-            #         if not keep:                        # After all condition delete if not keep.
-            #             # del element.getparent()[element.getparent().index(element)]
-            #             element.getparent().remove(element)
-            #     chunk = self._stream.read(chunk_size)
-            parser = etree.XMLPullParser(events=('end',))
+        if not self.stream:
+            raise Exception("Input stream is not initialized.")
+        elif self.stream.closed:
+            raise Exception("The input stream is closed.")
+        if Condition.LXML:
+            parser = self.etree.XMLPullParser(events=('end',))
             prev_parent = None
             prev_element = None
             keep = False
-            chunk = self._stream.read(chunk_size)
+            chunk = self.stream.read(chunk_size)
             while chunk:
                 parser.feed(chunk)
                 for action, element in parser.read_events():
@@ -439,11 +245,11 @@ class YAXReader():
                             keep = True
                     prev_parent = element.getparent()
                     prev_element = element
-                chunk = self._stream.read(chunk_size)
+                chunk = self.stream.read(chunk_size)
         else:
-            parser = etree.XMLPullParser(events=('end', 'start'))
+            parser = self.etree.XMLPullParser(events=('end', 'start'))
             parents = []
-            chunk = self._stream.read(chunk_size)
+            chunk = self.stream.read(chunk_size)
             while chunk:
                 parser.feed(chunk)
                 for action, element in parser.read_events():
@@ -459,53 +265,92 @@ class YAXReader():
                                 keep = True
                         if not keep and len(parents) > 0:
                             parents[-1].remove(element)
-                chunk = self._stream.read(chunk_size)
-        del self.stream
+                chunk = self.stream.read(chunk_size)
+        self.stream.close()
 
-    def find_as_element(self, tag=None, attrib={}, text=None,
-                        parent=None, children=None, keep_children=None) -> CallbackRunner:
+    def find(self, tag=None, attrib: dict=None, text=None,
+             parent=None, children=None, keep_children=None) -> CallbackRunner:
         tup = (Condition(tag, attrib, text, parent, children, keep_children),
                CallbackRunner(CallbackRunner.ETREE))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
 
-    def find_as_str(self, tag=None, attrib={}, text=None,
+    def match(self, cond: Condition) -> CallbackRunner:
+        tup = (cond, CallbackRunner(CallbackRunner.ETREE))
+        self._cnds.append(tup)
+        tup[1].condition = tup[0]
+        return tup[1]
+
+    # TODO remove deprecated funcs
+    def find_as_element(self, tag=None, attrib: dict=None, text=None,
+                        parent=None, children=None, keep_children=None) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
+        tup = (Condition(tag, attrib, text, parent, children, keep_children),
+               CallbackRunner(CallbackRunner.ETREE))
+        self._cnds.append(tup)
+        tup[1].condition = tup[0]
+        return tup[1]
+
+    def find_as_str(self, tag=None, attrib: dict=None, text=None,
                     parent=None, children=None, keep_children=None) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
         tup = (Condition(tag, attrib, text, parent, children, keep_children),
                CallbackRunner(CallbackRunner.STRING))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
 
-    def find_as_dict(self, tag=None, attrib={}, text=None,
+    def find_as_dict(self, tag=None, attrib: dict=None, text=None,
                      parent=None, children=None, keep_children=None) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
         tup = (Condition(tag, attrib, text, parent, children, keep_children),
                CallbackRunner(CallbackRunner.DICT))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
 
-    def find_as_json_dict(self, tag=None, attrib={}, text=None,
+    def find_as_json_dict(self, tag=None, attrib: dict=None, text=None,
                           parent=None, children=None, keep_children=None) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
         tup = (Condition(tag, attrib, text, parent, children, keep_children),
                CallbackRunner(CallbackRunner.JSON_DICT))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
 
     def match_as_element(self, cond: Condition) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
         tup = (cond, CallbackRunner(CallbackRunner.ETREE))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
 
     def match_as_str(self, cond: Condition) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
         tup = (cond, CallbackRunner(CallbackRunner.STRING))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
 
     def match_as_dict(self, cond: Condition) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
         tup = (cond, CallbackRunner(CallbackRunner.DICT))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
 
     def match_as_json_dict(self, cond: Condition) -> CallbackRunner:
+        warnings.warn("Deprecated: this method will be removed in version 2.0.\n"
+                      "Use the new converter methods.", DeprecationWarning)
         tup = (cond, CallbackRunner(CallbackRunner.JSON_DICT))
         self._cnds.append(tup)
+        tup[1].condition = tup[0]
         return tup[1]
