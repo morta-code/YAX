@@ -1,6 +1,6 @@
 import re
 import inspect
-from condition import Condition
+from .condition import Condition
 import warnings
 
 __author__ = 'Móréh, Tamás'
@@ -10,14 +10,8 @@ __author__ = 'Móréh, Tamás'
 RE = type(re.compile(""))
 
 
-def element_to_string(element, encoding="unicode", method="xml", xml_declaration=None,
-                      pretty_print=False, with_tail=True, standalone=None, doctype=None,
-                      exclusive=False, with_comments=True, inclusive_ns_prefixes=None):
-    return YAXReader.etree.tostring(element, encoding=encoding, method=method,
-                                    xml_declaration=xml_declaration, pretty_print=pretty_print,
-                                    with_tail=with_tail, standalone=standalone, doctype=doctype,
-                                    exclusive=exclusive, with_comments=with_comments,
-                                    inclusive_ns_prefixes=inclusive_ns_prefixes)
+def element_to_string(element, encoding="unicode", method="xml", **kwargs):
+    return YAXReader.etree.tostring(element, encoding=encoding, method=method, **kwargs)
 
 
 def element_to_cmplx_dict(element):
@@ -215,7 +209,7 @@ class YAXReader:
         else:
             import xml.etree.ElementTree as etree
             Condition.LXML = False
-        self.etree = etree
+        YAXReader.etree = etree
 
     @staticmethod
     def lxml_in_use():
@@ -227,7 +221,7 @@ class YAXReader:
         elif self.stream.closed:
             raise Exception("The input stream is closed.")
         if Condition.LXML:
-            parser = self.etree.XMLPullParser(events=('end',))
+            parser = YAXReader.etree.XMLPullParser(events=('end',))
             prev_parent = None
             prev_element = None
             keep = False
@@ -247,7 +241,7 @@ class YAXReader:
                     prev_element = element
                 chunk = self.stream.read(chunk_size)
         else:
-            parser = self.etree.XMLPullParser(events=('end', 'start'))
+            parser = YAXReader.etree.XMLPullParser(events=('end', 'start'))
             parents = []
             chunk = self.stream.read(chunk_size)
             while chunk:

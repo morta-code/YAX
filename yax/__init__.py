@@ -1,5 +1,5 @@
-from YAXReader import *
-from condition import *
+from .YAXReader import *
+from .condition import *
 
 __author__ = 'morta'
 
