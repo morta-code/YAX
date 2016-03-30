@@ -2,20 +2,20 @@
 YAX
 ===
 
-**Yet Another XML parser** is a Python module with the power of event-based memory-safe mechanism.
+**Yet Another XML parser** is a powerful event-based memory-efficient Python module.
 It analyses the XML stream node by node and builds subtrees only if it is really needed.
 
-In case of record-oriented XML (when some subtree structure is repeated many time)
-it means that it processes the file like a *SAX* and
-when a condition is satisfied it builds a subtree like a *DOM*.
+In case of record-oriented XML input (when some subtree structure is repeated many times),
+it processes the file in a sequential manner similar to that of *SAX*.
+However, conditions can be defined which trigger a *DOM* like processing where subtrees are created.
 
-This method is efficient also on very large data (larger than the capacity of the memory)
-both for storage and computational time complexity.
+This method is also efficient on very large data (which do not fit into the memory)
+both in terms of storage and computational time complexity.
 
 Dependencies
 ~~~~~~~~~~~~
-YAX uses Python 3.x and above. It doesn't depend on any third party module
-however if you have *lxml* installed you can use it as back-end.
+YAX uses Python 3.x and above. It doesn't depend on any third party module.
+However, if you have *lxml* installed you can use it as back-end.
 (See the documentation about performance.)
 
 Installation
