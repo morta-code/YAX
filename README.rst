@@ -59,5 +59,5 @@ For more example or the complete reference see the documentation.
 See also
 ~~~~~~~~
 
-* External documentation
-* Issue tracker (feel free to use it!)
+* `External documentation <doc/REFERENCE.md>`_
+* `Issue tracker <https://github.com/morta-code/YAX/issues>`_ (feel free to use it!)
