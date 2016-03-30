@@ -19,6 +19,7 @@ setup(
     author_email='morta@digitus.itk.ppke.hu',
     description='Yet Another XML parser with the power of event-based memory-safe mechanism.',
     long_description=long_description,
+    keywords="xml lxml parser event-based record-oriented",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Environment :: Console",
