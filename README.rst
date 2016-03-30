@@ -34,7 +34,7 @@ A simple example which prints all the elements with tagname "a" and containing "
 
     yr = yax.YAXReader(open("file.xml"))
     yr.find("a", {"href": True}).calls(
-        lambda e, i: print(yax.element_to_string(e, with_tail=False))
+        lambda e, i: print(yax.element_to_string(e, with_tail=False))  # with_tail only whith lxml!
     )
     yr.start()
 
