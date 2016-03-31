@@ -47,7 +47,7 @@ You can specify the subtree filter with the following arguments:
 Returns a `CallbackRunner` object, which can run a callabble with the found subtree.
 
 ```python
-yr.mach(cond) -> CallbackRunner
+yr.match(cond: Condition) -> CallbackRunner
 ```
 is the function to define event handlers. It creates a filter and when a subtree fultils them,
 it performs the event-handler.
@@ -68,7 +68,7 @@ yr.find("flower", children={"tag": "price", "text": lambda p: float(p) < 10})
     .calls(lambda e, l: print("Cheap flower: {}".format(e.find("name").text)))
 yr.find("flower", children={"tag": "price", "text": lambda p: float(p) > 10})
     .calls(lambda e, l: print("Expensive flower: {}".format(e.find("name").text)))
-yr.find("flower", children=(re.compile("col[ou]r"), None, ["yellow", "orange", "red", "purple"]))
+yr.find("flower", children=(re.compile("colou?r"), None, ["yellow", "orange", "red", "purple"]))
     .calls(lambda e, l: print("The {} is nice!".format(e.find("name").text)))
 yr.start()
 ```
