@@ -47,7 +47,7 @@ You can specify the subtree filter with the following arguments:
 Returns a `CallbackRunner` object, which can run a callabble with the found subtree.
 
 ```python
-yr.mach(cond) -> CallbackRunner
+yr.match(cond: Condition) -> CallbackRunner
 ```
 is the function to define event handlers. It creates a filter and when a subtree fultils them,
 it performs the event-handler.
