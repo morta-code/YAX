@@ -74,6 +74,10 @@ def element_to_json_dict(element, attrib_prefix="-", text_prefix="#"):
     return {tag: d}
 
 
+def element_to_element(e):
+    return e
+
+
 class CallbackRunner:
     ETREE = 1
     STRING = 2
@@ -86,73 +90,10 @@ class CallbackRunner:
     def _default(*args):
         pass
 
-    @staticmethod
-    def _convert_to_string(e):
-        return YAXReader.etree.tostring(e)
-
-    @staticmethod
-    def _convert_to_cmplx_dict(e):
-        # {tag: "", attrib: {}, text: "", children: {}, childlist: []}
-        d = dict()
-        d["tag"] = e.tag
-        d["attrib"] = e.attrib
-        d["text"] = e.text
-        chd = {}
-        chl = []
-        for child in list(e):
-            cd = CallbackRunner._convert_to_cmplx_dict(child)
-            chl.append(cd)
-            chd[cd["tag"]] = cd
-        d["children"] = chd
-        d["childlist"] = chl
-        return d
-
-    @staticmethod
-    def _convert_to_json_dict(e):
-        tag = e.tag
-        text = [e.text.strip() if e.text is not None else "", ]
-        d = dict()
-
-        for a, v in e.attrib.items():
-            if d.get(CallbackRunner.ATTRIB_PREFIX + a):
-                c = d[CallbackRunner.ATTRIB_PREFIX + a]
-                if isinstance(c, list):
-                    c.append(v)
-                else:
-                    d[CallbackRunner.ATTRIB_PREFIX + a] = [c, v]
-            else:
-                d[CallbackRunner.ATTRIB_PREFIX + a] = v
-
-        for child in list(e):
-            text.append(child.tail.strip() if child.tail is not None else "")
-            ch = CallbackRunner._convert_to_json_dict(child)
-            if d.get(child.tag):
-                c = d[child.tag]
-                if isinstance(c, list):
-                    c.append(ch[child.tag])
-                else:
-                    d[child.tag] = [c, ch[child.tag]]
-            else:
-                d[child.tag] = ch[child.tag]
-
-        # clean text
-        t2 = []
-        for t in text:
-            if t:
-                t2.append(t)
-        text = t2
-        if len(text) == 1:
-            text = text[0]
-        # add text if exists
-        if len(d) == 0:
-            d = text
-        elif text:
-            d[CallbackRunner.TEXT_PREFIX+"text"] = text
-        return {tag: d}
-
-    @staticmethod
-    def _convert_to_element(e):
-        return e
+    CONVERT_DICT = {ETREE: element_to_element,
+                    STRING: element_to_string,
+                    DICT: element_to_cmplx_dict,
+                    JSON_DICT: element_to_json_dict}
 
     def __init__(self, t: int, attrib_prefix='-', text_prefix='#', condition: Condition=None):
         self.condition = condition
@@ -160,18 +101,13 @@ class CallbackRunner:
         self._type = t
         CallbackRunner.ATTRIB_PREFIX = attrib_prefix
         CallbackRunner.TEXT_PREFIX = text_prefix
-        if t == CallbackRunner.ETREE:
-            self._convert = CallbackRunner._convert_to_element
-        elif t == CallbackRunner.STRING:
-            self._convert = CallbackRunner._convert_to_string
-        elif t == CallbackRunner.DICT:
-            self._convert = CallbackRunner._convert_to_cmplx_dict
-        elif t == CallbackRunner.JSON_DICT:
-            self._convert = CallbackRunner._convert_to_json_dict
-        else:
-            raise Exception("CallbackRunner type must be one of CallbackRunner.ETREE, " +
-                            "CallbackRunner.STRING, CallbackRunner.JSON_DICT and " +
-                            "CallbackRunner.DICT!")
+        try:
+            self._convert = CallbackRunner.CONVERT_DICT[t]
+        except KeyError as e:
+            e.args = ("CallbackRunner type must be one of CallbackRunner.ETREE, " +
+                      "CallbackRunner.STRING, CallbackRunner.JSON_DICT and " +
+                      "CallbackRunner.DICT!",)
+            raise
 
     def inverted(self) -> Condition:
         warnings.warn("This feature is waiting for a better implementation", FutureWarning)
